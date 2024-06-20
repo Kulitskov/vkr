@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <title>Analytics</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+        <a class="navbar-brand" href="/">Parking System</a>
+        <div class="collapse navbar-collapse">
+            <ul class="navbar-nav mr-auto">
+                <li class="nav-item"><a class="nav-link" href="/markup">Разметка</a></li>
+                <li class="nav-item"><a class="nav-link" href="/display">Просмотр</a></li>
+                <li class="nav-item"><a class="nav-link" href="/analytics">Аналитика</a></li>
+            </ul>
+        </div>
+    </nav>
+    <div class="container">
+        <h1>Аналитика</h1>
+        <select id="cameraSelect" class="form-control">
+            <option value="">Выберите камеру</option>
+            {% for camera, url in cameras.items() %}
+                <option value="{{ camera }}">{{ camera }}</option>
+            {% endfor %}
+        </select>
+        <button id="getAverageOccupancyTime" class="btn btn-primary mt-2">Занятость парковочных мест</button>
+        <button id="getOverallAverageOccupancyTime" class="btn btn-secondary mt-2">Занятость парковки с пн-вс</button>
+        <button id="getOccupancyPercentageByHour" class="btn btn-success mt-2">Занятость парковки за последний день</button>
+        <div>
+            <canvas id="occupancyChart" width="400" height="200"></canvas>
+        </div>
+    </div>
+    <script>
+        let currentChart = null;
+
+        document.getElementById('getAverageOccupancyTime').addEventListener('click', function() {
+            const camera = document.getElementById('cameraSelect').value;
+            if (camera) {
+                fetch(`/analytics/average_occupancy_time/${encodeURIComponent(camera)}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        drawChart(data, 'Занятость парковочных мест (%)', 'место');
+                    });
+            } else {
+                alert('Please select a camera');
+            }
+        });
+
+        document.getElementById('getOverallAverageOccupancyTime').addEventListener('click', function() {
+            const camera = document.getElementById('cameraSelect').value;
+            if (camera) {
+                fetch(`/analytics/overall_average_occupancy_time/${encodeURIComponent(camera)}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        drawChart(data, 'Занятость парковки с пн-вс (%)', 'день');
+                    });
+            } else {
+                alert('Please select a camera');
+            }
+        });
+
+        document.getElementById('getOccupancyPercentageByHour').addEventListener('click', function() {
+            const camera = document.getElementById('cameraSelect').value;
+            if (camera) {
+                fetch(`/analytics/occupancy_percentage_by_hour/${encodeURIComponent(camera)}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        drawChart(data, 'Занятость парковки за последний день (%)', 'час');
+                    });
+            } else {
+                alert('Please select a camera');
+            }
+        });
+
+        function drawChart(data, label, keyName) {
+            if (currentChart) {
+                currentChart.destroy();
+            }
+            const ctx = document.getElementById('occupancyChart').getContext('2d');
+            const labels = (keyName !== 'день') 
+                ? Object.keys(data).map(key => isNaN(key) ? key : `${keyName} ${key}`)
+                : ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
+            const values = Object.values(data);
+            console.log(Object.values(data));
+            currentChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: label,
+                        data: values,
+                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100
+                        }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>

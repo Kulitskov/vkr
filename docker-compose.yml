@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  main:
+    build:
+      context: .
+      dockerfile: main/Dockerfile
+    volumes:
+      - ./main:/app/main
+      - ./db:/app/db
+    ports:
+      - "5000:5000"
+    environment:
+      FLASK_APP: main/views.py
+      FLASK_ENV: development
+
+  detection:
+    build:
+      context: .
+      dockerfile: detection/Dockerfile
+    volumes:
+      - ./detection:/app/detection
+      - ./db:/app/db
+    ports:
+      - "5001:5001"
+
+  analytics:
+    build:
+      context: .
+      dockerfile: analytics/Dockerfile
+    volumes:
+      - ./analytics:/app/analytics
+      - ./db:/app/db
+    ports:
+      - "5002:5002"

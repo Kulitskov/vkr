@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta charset="utf-8">
+    <title>Display</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+        <a class="navbar-brand" href="/">Parking System</a>
+        <div class="collapse navbar-collapse">
+            <ul class="navbar-nav mr-auto">
+                <li class="nav-item"><a class="nav-link" href="/markup">Разметка</a></li>
+                <li class="nav-item"><a class="nav-link" href="/display">Просмотр</a></li>
+                <li class="nav-item"><a class="nav-link" href="/analytics">Аналитика</a></li>
+            </ul>
+        </div>
+    </nav>
+    <div class="container">
+        <h1>Просмотр камеры</h1>
+        <select id="cameraSelect" class="form-control">
+            <option value="">Выберите камеру</option>
+            {% for camera, url in cameras.items() %}
+                <option value="{{ camera }}">{{ camera }}</option>
+            {% endfor %}
+        </select>
+        <div id="imageContainer" style="margin-top: 20px;">
+            <canvas id="cameraCanvas" style="width: 100%; height: auto;"></canvas>
+        </div>
+    </div>
+    <script>
+        const cameras = {{ cameras|tojson }};
+        let cameraInterval;
+        let processInterval;
+        let rectangles = [];
+
+        document.getElementById('cameraSelect').addEventListener('change', function() {
+            clearInterval(cameraInterval);
+            clearInterval(processInterval);
+            let camera = this.value;
+            if (camera) {
+                fetch(`/get_rectangles/${encodeURIComponent(camera)}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        rectangles = data;
+                        updateImage(camera);
+                        processImage(camera);  // Сразу отправляем запрос на обработку изображения
+                        cameraInterval = setInterval(() => updateImage(camera), 1000);
+                        processInterval = setInterval(() => processImage(camera), 10000);
+                    });
+            } else {
+                const canvas = document.getElementById('cameraCanvas');
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
+        });
+
+        function updateImage(camera) {
+            const canvas = document.getElementById('cameraCanvas');
+            const ctx = canvas.getContext('2d');
+            const img = new Image();
+            img.src = `/frame/${camera}?t=${new Date().getTime()}`;
+            img.onload = function() {
+                canvas.width = img.width;
+                canvas.height = img.height;
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                canvas.setAttribute('data-src', img.src);
+                drawRectangles();
+            };
+        }
+
+        async function processImage(camera) {
+            const response = await fetch(`http://127.0.0.1:5001/process_image`, {  // Отправка запроса на сервис process
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ camera, rectangles, rtsp_url: cameras[camera] })
+            });
+            const data = await response.json();
+            rectangles.forEach((rect, index) => {
+                if (data.colors && data.colors[index]) {
+                    rect.color = data.colors[index];
+                } else {
+                    rect.color = 'cyan';
+                }
+            });
+            drawRectangles();
+        }
+
+        function drawRectangles() {
+            const canvas = document.getElementById('cameraCanvas');
+            const ctx = canvas.getContext('2d');
+            const img = new Image();
+            img.src = canvas.getAttribute('data-src');
+            img.onload = function() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                rectangles.forEach(rect => {
+                    ctx.strokeStyle = rect.color || 'cyan';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(rect[0].x, rect[0].y);
+                    ctx.lineTo(rect[1].x, rect[1].y);
+                    ctx.lineTo(rect[2].x, rect[2].y);
+                    ctx.lineTo(rect[3].x, rect[3].y);
+                    ctx.closePath();
+                    ctx.stroke();
+                });
+            };
+        }
+    </script>
+</body>
+</html>

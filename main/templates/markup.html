@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <title>Markup</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+        <a class="navbar-brand" href="/">Parking System</a>
+        <div class="collapse navbar-collapse">
+            <ul class="navbar-nav mr-auto">
+                <li class="nav-item"><a class="nav-link" href="/markup">Разметка</a></li>
+                <li class="nav-item"><a class="nav-link" href="/display">Просмотр</a></li>
+                <li class="nav-item"><a class="nav-link" href="/analytics">Аналитика</a></li>
+            </ul>
+        </div>
+    </nav>
+    <div class="container">
+        <h1>Разметка парковочных мест</h1>
+        <select id="cameraSelect" class="form-control">
+            <option value="">Выберите камеру</option>
+            {% for camera, url in cameras.items() %}
+                <option value="{{ camera }}">{{ camera }}</option>
+            {% endfor %}
+        </select>
+        <button class="btn btn-primary mt-2" onclick="showAddCameraModal()">Добавить камеру</button>
+        <div id="imageContainer" style="margin-top: 20px;">
+            <canvas id="cameraCanvas" style="width: 100%; height: auto;" onclick="markPoint(event)"></canvas>
+        </div>
+        <button id="markButton" class="btn btn-primary" onclick="startMarking()">Отметить точки</button>
+        <button id="saveButton" class="btn btn-success" onclick="saveRectangles()">Сохранить</button>
+        <button id="deleteButton" class="btn btn-danger" onclick="deleteAllRectangles()">Удалить все точки</button>
+    </div>
+
+    <!-- Modal for Adding Camera -->
+    <div class="modal fade" id="addCameraModal" tabindex="-1" aria-labelledby="addCameraModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="addCameraModalLabel">Добавить камеру</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <form id="addCameraForm">
+                        <div class="form-group">
+                            <label for="cameraName">Название камеры</label>
+                            <input type="text" class="form-control" id="cameraName" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="cameraUrl">RTSP поток</label>
+                            <input type="text" class="form-control" id="cameraUrl" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Сохранить</button>
+                        <button type="button" class="btn btn-secondary" data-dismiss="modal">Отмена</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let marking = false;
+        let points = [];
+        let rectangles = [];
+        let cameras = {{ cameras|tojson }};
+
+        document.getElementById('cameraSelect').addEventListener('change', function() {
+            let camera = this.value;
+            if (camera) {
+                loadImage(cameras[camera]);
+                points = [];
+                fetch(`/get_rectangles/${encodeURIComponent(camera)}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        rectangles = data;
+                        drawRectangles();
+                    });
+            } else {
+                const canvas = document.getElementById('cameraCanvas');
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
+        });
+
+        function startMarking() {
+            marking = true;
+            points = [];
+        }
+
+        function markPoint(event) {
+            if (!marking) return;
+            const canvas = document.getElementById('cameraCanvas');
+            const rect = canvas.getBoundingClientRect();
+            const x = (event.clientX - rect.left) * (canvas.width / rect.width);
+            const y = (event.clientY - rect.top) * (canvas.height / rect.height);
+            points.push({ x, y });
+
+            if (points.length === 4) {
+                rectangles.push(points);
+                points = [];
+            }
+            drawRectangles();
+        }
+
+        function drawRectangles() {
+            const canvas = document.getElementById('cameraCanvas');
+            const ctx = canvas.getContext('2d');
+            const img = new Image();
+            img.src = canvas.getAttribute('data-src');
+            img.onload = function() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                ctx.strokeStyle = 'cyan';
+                ctx.lineWidth = 2;
+
+                rectangles.forEach((rect, index) => {
+                    ctx.beginPath();
+                    ctx.moveTo(rect[0].x, rect[0].y);
+                    ctx.lineTo(rect[1].x, rect[1].y);
+                    ctx.lineTo(rect[2].x, rect[2].y);
+                    ctx.lineTo(rect[3].x, rect[3].y);
+                    ctx.closePath();
+                    ctx.stroke();
+
+                    const centerX = (rect[0].x + rect[2].x) / 2;
+                    const centerY = (rect[0].y + rect[2].y) / 2;
+                    const text = (index + 1).toString();
+                    ctx.fillStyle = 'cyan';
+                    ctx.font = '16px Arial';
+                    const textWidth = ctx.measureText(text).width;
+                    ctx.fillText(text, centerX - textWidth / 2, centerY + 8);
+                });
+
+                points.forEach(point => {
+                    ctx.beginPath();
+                    ctx.arc(point.x, point.y, 3, 0, 2 * Math.PI);
+                    ctx.fillStyle = 'red';
+                    ctx.fill();
+                    ctx.stroke();
+                });
+            };
+        }
+
+        function loadImage(src) {
+            const canvas = document.getElementById('cameraCanvas');
+            const ctx = canvas.getContext('2d');
+            const img = new Image();
+            img.src = src;
+            img.onload = function() {
+                canvas.width = img.width;
+                canvas.height = img.height;
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                canvas.setAttribute('data-src', src);
+                drawRectangles();
+            };
+        }
+
+        function saveRectangles() {
+            const camera = document.getElementById('cameraSelect').value;
+            if (camera) {
+                fetch('/save_rectangles', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ camera, rectangles })
+                }).then(response => response.json())
+                  .then(data => alert('Rectangles saved successfully!'));
+            }
+        }
+
+        function deleteAllRectangles() {
+            const camera = document.getElementById('cameraSelect').value;
+            if (camera) {
+                rectangles = [];
+                drawRectangles();
+                fetch('/save_rectangles', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ camera, rectangles })
+                }).then(response => response.json())
+                  .then(data => alert('All rectangles deleted successfully!'));
+            }
+        }
+
+        function showAddCameraModal() {
+            $('#addCameraModal').modal('show');
+        }
+
+        document.getElementById('addCameraForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const cameraName = document.getElementById('cameraName').value;
+            const cameraUrl = document.getElementById('cameraUrl').value;
+            if (cameraName && cameraUrl) {
+                cameras[cameraName] = cameraUrl;
+                updateCamerasJson();
+                $('#addCameraModal').modal('hide');
+                alert('Камера успешно добавлена');
+                addCameraToSelect(cameraName);
+            }
+        });
+
+        function updateCamerasJson() {
+            fetch('/save_cameras', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(cameras)
+            }).then(response => response.json())
+              .then(data => console.log('Cameras updated successfully!'));
+        }
+
+        function addCameraToSelect(cameraName) {
+            const cameraSelect = document.getElementById('cameraSelect');
+            const option = document.createElement('option');
+            option.value = cameraName;
+            option.textContent = cameraName;
+            cameraSelect.appendChild(option);
+        }
+    </script>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+</body>
+</html>
